@@ -7,6 +7,12 @@ const TagSchema = new mongoose.Schema({
     trim: true,
     max_length: [50, "Tag name cannot exceed 50 characters"],
   },
+  color: {
+    type: String,
+    required: [true, "Tag color is required"],
+    trim: true,
+    max_length: [7, "Tag color cannot exceed 7 characters"],
+  },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",

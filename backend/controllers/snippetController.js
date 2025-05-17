@@ -2,66 +2,17 @@ import Snippet from "../models/Snippet.js";
 import Tag from "../models/Tag.js";
 import asyncHandler from "../middleware/asyncMiddleware.js";
 import ErrorResponse from "../utils/errorResponse.js";
+import snippetRepository from "../repositories/snippetRepository.js";
 
 // @desc    Create a new snippet
 // @route   POST /api/snippets
 // @access  Private
 export const createSnippet = asyncHandler(async (req, res, next) => {
-  const { title, description, code, programmingLanguage, tags } = req.body;
-
-  // Validate required fields
-  if (!title || !code || !programmingLanguage) {
-    return next(
-      new ErrorResponse(
-        "Title, code, and programming language are required",
-        400
-      )
-    );
-  }
-
-  // Ensure we have a user from auth middleware
-  if (!req.user || !req.user.id) {
-    return next(new ErrorResponse("User authentication required", 401));
-  }
+  // Add user to req.body
+  req.body.user = req.user.id;
 
   // Create a new snippet with the current user
-  const snippet = await Snippet.create({
-    title,
-    description,
-    code,
-    programmingLanguage,
-    user: req.user.id, // This automatically attaches the current user's ID
-    tags: tags || [],
-  });
-
-  // Process tags if provided
-  /* if (tags && tags.length > 0) {
-    // Create tags that don't exist and update snippet count
-    const tagPromises = tags.map(async (tagName) => {
-      // Find or create the tag
-      let tag = await Tag.findOne({
-        name: tagName,
-        user: req.user.id,
-      });
-
-      if (!tag) {
-        // If tag doesn't exist, create it
-        tag = await Tag.create({
-          name: tagName,
-          user: req.user.id,
-          snippetCount: 1,
-        });
-      } else {
-        // If tag exists, increment the snippet count
-        tag.snippetCount += 1;
-        await tag.save();
-      }
-
-      return tag;
-    });
-
-    await Promise.all(tagPromises);
-  } */
+  const snippet = await snippetRepository.createSnippet(req.body);
 
   res.status(201).json({
     success: true,
@@ -73,28 +24,41 @@ export const createSnippet = asyncHandler(async (req, res, next) => {
 // @route   GET /api/snippets
 // @access  Private
 export const getAllSnippets = asyncHandler(async (req, res, next) => {
-  const snippets = await Snippet.find({ user: req.user.id });
+  // Ready the filters
+  const filters = {
+    search: req.query.search,
+    language: req.query.language,
+    tag: req.query.tag,
+    sortBy: req.query.sortBy,
+    sortDirection: req.query.sortDirection || "desc",
+  };
 
-  // Search by title or description if provided
-  const { search } = req.query;
-  if (search) {
-    snippets = snippets.filter(
-      (snippet) =>
-        snippet.title.includes(search) || snippet.description.includes(search)
-    );
-  }
+  // Ready the pagination
+  const pagination = {
+    page: parseInt(req.query.page, 10) || 1,
+    limit: parseInt(req.query.limit, 10) || 10,
+  };
 
-  // Filter by programming language if provided
-  const { programmingLanguage } = req.query;
-  if (programmingLanguage) {
-    snippets = snippets.filter(
-      (snippet) => snippet.programmingLanguage === programmingLanguage
-    );
-  }
+  // Get snippets from the repository
+  const result = await snippetRepository.getAllSnippets(
+    filters,
+    pagination,
+    req.user.id
+  );
 
+  // Response with snippets and pagination info
   res.status(200).json({
     success: true,
-    data: snippets,
+    data: {
+      count: result.totalSnippets,
+      currentPage: result.currentPage,
+      data: result.snippets,
+      pagination: {
+        page: result.currentPage,
+        limit: pagination.limit,
+        totalPages: result.totalPages,
+      },
+    },
   });
 });
 
@@ -102,7 +66,7 @@ export const getAllSnippets = asyncHandler(async (req, res, next) => {
 // @route   GET /api/snippets/:id
 // @access  Private
 export const getSnippetById = asyncHandler(async (req, res, next) => {
-  const snippet = await Snippet.findById(req.params.id);
+  const snippet = await snippetRepository.getSnippetById(req.params.id);
 
   if (!snippet) {
     return next(new ErrorResponse("Snippet not found", 404));
@@ -125,40 +89,28 @@ export const getSnippetById = asyncHandler(async (req, res, next) => {
 // @route   PUT /api/snippets/:id
 // @access  Private
 export const updateSnippet = asyncHandler(async (req, res, next) => {
-  const { title, description, code, programmingLanguage, tags } = req.body;
-
-  // Validate required fields
-  if (!title || !code || !programmingLanguage) {
+  // First check if snippet exists and user owns it
+  const existingSnippet = await snippetRepository.getSnippetById(req.params.id);
+  // Check if snippet exists
+  if (!existingSnippet) {
     return next(
-      new ErrorResponse(
-        "Title, code, and programming language are required",
-        400
-      )
+      new ErrorResponse(`Snippet not found with id of ${req.params.id}`, 404)
     );
   }
 
-  // Find the snippet
-  let snippet = await Snippet.findById(req.params.id);
-
-  if (!snippet) {
-    return next(new ErrorResponse("Snippet not found", 404));
-  }
-
-  // Ensure the snippet belongs to the user
-  if (snippet.user.toString() !== req.user.id) {
+  // Make sure user owns the snippet
+  if (existingSnippet.user.toString() !== req.user.id) {
     return next(
-      new ErrorResponse("Not authorized to access this snippet", 403)
+      new ErrorResponse(`Not authorized to update this snippet`, 401)
     );
   }
 
   // Update the snippet
-  snippet.title = title;
-  snippet.description = description;
-  snippet.code = code;
-  snippet.programmingLanguage = programmingLanguage;
-  snippet.tags = tags || [];
-
-  await snippet.save();
+  const snippet = await snippetRepository.updateSnippet(
+    req.params.id,
+    req.body,
+    req.user.id
+  );
 
   res.status(200).json({
     success: true,
@@ -171,7 +123,7 @@ export const updateSnippet = asyncHandler(async (req, res, next) => {
 // @access  Private
 export const deleteSnippet = asyncHandler(async (req, res, next) => {
   // Find the snippet
-  const snippet = await Snippet.findById(req.params.id);
+  const snippet = await snippetRepository.getSnippetById(req.params.id);
 
   if (!snippet) {
     return next(new ErrorResponse("Snippet not found", 404));
@@ -185,7 +137,7 @@ export const deleteSnippet = asyncHandler(async (req, res, next) => {
   }
 
   // Delete the snippet
-  await snippet.remove();
+  await snippetRepository.deleteSnippet(req.params.id);
 
   res.status(200).json({
     success: true,

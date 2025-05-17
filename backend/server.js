@@ -10,6 +10,7 @@ import errorHandler from "./middleware/errorMiddleware.js";
 // Import routes
 import authRoutes from "./routes/authRoutes.js";
 import snippetRoutes from "./routes/snippetRoutes.js";
+import tagRoutes from "./routes/tagRoutes.js";
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ if (process.env.NODE_ENV === "development") {
 // Version 1 API
 app.use("/v1/api/auth", authRoutes);
 app.use("/v1/api/snippets", snippetRoutes);
+app.use("/v1/api/tags", tagRoutes);
 
 // Error handling middleware
 app.use(errorHandler);
