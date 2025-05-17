@@ -1,9 +1,11 @@
 import express from "express";
 import dotenv from "dotenv";
 import { connectDB } from "./config/db.js";
-import cors from "cors";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
+
+// Middleware for error handling
+import errorHandler from "./middleware/errorMiddleware.js";
 
 // Import routes
 import authRoutes from "./routes/authRoutes.js";
@@ -29,6 +31,9 @@ if (process.env.NODE_ENV === "development") {
 // Version 1 API
 app.use("/v1/api/auth", authRoutes);
 app.use("/v1/api/snippets", snippetRoutes);
+
+// Error handling middleware
+app.use(errorHandler);
 
 // Serve static assets if in production
 if (process.env.NODE_ENV === "production") {
