@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import BlacklistedToken from "../models/BlacklistedToken.js";
 import asyncHandler from "express-async-handler";
 import ErrorResponse from "../utils/errorResponse.js";
 
@@ -75,6 +76,23 @@ export const me = asyncHandler(async (req, res, next) => {
 // @route   GET /api/v1/auth/logout
 // @access  Private
 export const logout = asyncHandler(async (req, res, next) => {
+  // Get the token
+  let token;
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith("Bearer")
+  ) {
+    token = req.headers.authorization.split(" ")[1];
+  } else if (req.cookies.token) {
+    token = req.cookies.token;
+  }
+
+  // Add token to blacklist if it exists
+  if (token) {
+    await BlacklistedToken.create({ token });
+  }
+
+  // Clear cookie
   res.cookie("token", "none", {
     expires: new Date(Date.now() + 10 * 1000),
     httpOnly: true,
@@ -82,6 +100,7 @@ export const logout = asyncHandler(async (req, res, next) => {
 
   res.status(200).json({
     success: true,
+    message: "Logged out successfully",
     data: {},
   });
 });
